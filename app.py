@@ -33,11 +33,12 @@ st.markdown("""
 
     .country-card {
         border-radius: 14px;
-        padding: 22px 30px;
+        padding: 22px 20px;
         margin-bottom: 20px;
         border: 1px solid #E2E8F0;
         transition: transform 0.2s ease;
         background: #FFFFFF;
+        min-height: 140px;
     }
     .country-card:hover {
         transform: translateY(-2px);
@@ -47,10 +48,10 @@ st.markdown("""
     .score-badge-large {
         background-color: #001489;
         color: #FFFFFF;
-        padding: 8px 18px;
+        padding: 6px 14px;
         border-radius: 30px;
         font-weight: 700;
-        font-size: 18px;
+        font-size: 16px;
         display: inline-block;
         float: right;
     }
@@ -60,8 +61,9 @@ st.markdown("""
         color: #FFFFFF;
         border-radius: 6px;
         font-weight: 600;
-        padding: 8px 24px;
+        padding: 8px 16px;
         height: 40px;
+        width: 100%;
         border: none;
         box-shadow: 0 2px 4px rgba(0, 20, 137, 0.2);
     }
@@ -87,7 +89,6 @@ def deep_crawl_and_audit(base_url, max_pages=100):
     
     for sm_url in sitemap_candidates:
         try:
-            # impersonate="chrome110" kullanarak WAF engelleri aşılır
             resp = c_requests.get(sm_url, timeout=6, impersonate="chrome110")
             if resp.status_code == 200:
                 root = ET.fromstring(resp.content)
@@ -162,7 +163,6 @@ def deep_crawl_and_audit(base_url, max_pages=100):
         try:
             time.sleep(0.3) # Rate limiting
             
-            # Use curl_cffi to mimic real Chrome browser fingerprint
             page_resp = c_requests.get(url, timeout=4, impersonate="chrome110")
             if page_resp.status_code == 200:
                 soup = BeautifulSoup(page_resp.text, 'html.parser')
@@ -249,6 +249,7 @@ st.markdown(f"""
 st.markdown("---")
 
 country_data = {
+    "US": {"name": "United States", "url": "https://www.syngenta-us.com", "score": 68, "flag": "🇺🇸", "color": "#FEF2F2"},
     "UK": {"name": "United Kingdom", "url": "https://www.syngenta.co.uk", "score": 65, "flag": "🇬🇧", "color": "#FFF7ED"},
     "Poland": {"name": "Poland", "url": "https://www.syngenta.pl", "score": 59, "flag": "🇵🇱", "color": "#F0FDF4"},
     "Germany": {"name": "Germany", "url": "https://www.syngenta.de", "score": 62, "flag": "🇩🇪", "color": "#EFF6FF"}
@@ -263,44 +264,57 @@ if st.session_state.selected_country == "Home":
 
     max_limit = st.slider("Select Maximum Page Crawl Limit per Country:", 20, 100, 100)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     
     with c1:
         st.markdown(f"""
-            <div class="country-card" style="background: {country_data['Poland']['color']};">
-                <span class="score-badge-large">{country_data['Poland']['score']}</span>
-                <div style="font-size: 20px; font-weight: 700; color: #0F172A;">{country_data['Poland']['flag']} Poland</div>
-                <div style="color: #475569; font-size: 14px; margin-top: 10px;">{country_data['Poland']['url']}</div>
+            <div class="country-card" style="background: {country_data['US']['color']};">
+                <span class="score-badge-large">{country_data['US']['score']}</span>
+                <div style="font-size: 18px; font-weight: 700; color: #0F172A;">{country_data['US']['flag']} US</div>
+                <div style="color: #475569; font-size: 12px; margin-top: 8px; word-break: break-all;">{country_data['US']['url']}</div>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Poland Workspace", key="bp"):
-            st.session_state.selected_country = "Poland"
+        if st.button("Open US", key="bus"):
+            st.session_state.selected_country = "US"
             st.session_state.max_limit = max_limit
             st.rerun()
 
     with c2:
         st.markdown(f"""
-            <div class="country-card" style="background: {country_data['Germany']['color']};">
-                <span class="score-badge-large">{country_data['Germany']['score']}</span>
-                <div style="font-size: 20px; font-weight: 700; color: #0F172A;">{country_data['Germany']['flag']} Germany</div>
-                <div style="color: #475569; font-size: 14px; margin-top: 10px;">{country_data['Germany']['url']}</div>
+            <div class="country-card" style="background: {country_data['UK']['color']};">
+                <span class="score-badge-large">{country_data['UK']['score']}</span>
+                <div style="font-size: 18px; font-weight: 700; color: #0F172A;">{country_data['UK']['flag']} UK</div>
+                <div style="color: #475569; font-size: 12px; margin-top: 8px; word-break: break-all;">{country_data['UK']['url']}</div>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Germany Workspace", key="bd"):
-            st.session_state.selected_country = "Germany"
+        if st.button("Open UK", key="bu"):
+            st.session_state.selected_country = "UK"
             st.session_state.max_limit = max_limit
             st.rerun()
 
     with c3:
         st.markdown(f"""
-            <div class="country-card" style="background: {country_data['UK']['color']};">
-                <span class="score-badge-large">{country_data['UK']['score']}</span>
-                <div style="font-size: 20px; font-weight: 700; color: #0F172A;">{country_data['UK']['flag']} United Kingdom</div>
-                <div style="color: #475569; font-size: 14px; margin-top: 10px;">{country_data['UK']['url']}</div>
+            <div class="country-card" style="background: {country_data['Poland']['color']};">
+                <span class="score-badge-large">{country_data['Poland']['score']}</span>
+                <div style="font-size: 18px; font-weight: 700; color: #0F172A;">{country_data['Poland']['flag']} Poland</div>
+                <div style="color: #475569; font-size: 12px; margin-top: 8px; word-break: break-all;">{country_data['Poland']['url']}</div>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Open UK Workspace", key="bu"):
-            st.session_state.selected_country = "UK"
+        if st.button("Open Poland", key="bp"):
+            st.session_state.selected_country = "Poland"
+            st.session_state.max_limit = max_limit
+            st.rerun()
+
+    with c4:
+        st.markdown(f"""
+            <div class="country-card" style="background: {country_data['Germany']['color']};">
+                <span class="score-badge-large">{country_data['Germany']['score']}</span>
+                <div style="font-size: 18px; font-weight: 700; color: #0F172A;">{country_data['Germany']['flag']} Germany</div>
+                <div style="color: #475569; font-size: 12px; margin-top: 8px; word-break: break-all;">{country_data['Germany']['url']}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open Germany", key="bd"):
+            st.session_state.selected_country = "Germany"
             st.session_state.max_limit = max_limit
             st.rerun()
 
