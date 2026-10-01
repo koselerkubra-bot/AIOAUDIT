@@ -71,18 +71,27 @@ st.markdown("""
 if 'selected_country' not in st.session_state:
     st.session_state.selected_country = "Home"
 
-# --- CRAWLER & PAGE AIO AUDIT FUNCTION ---
-def get_and_audit_country_pages(base_url, max_pages=20):
+# --- DEEP CRAWLER & ACTIONABLE AIO AUDIT FUNCTION ---
+def deep_crawl_and_audit(base_url, max_pages=60):
     discovered_urls = set()
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
     }
     
-    # 1. Sitemap Taraması
-    for sm_url in [base_url.rstrip('/') + '/sitemap.xml', base_url.rstrip('/') + '/sitemap_index.xml']:
+    domain = urlparse(base_url).netloc
+    base_clean = base_url.rstrip('/')
+
+    # 1. Comprehensive Sitemap & Nested Sitemap Parsing
+    sitemap_candidates = [
+        base_clean + '/sitemap.xml',
+        base_clean + '/sitemap_index.xml',
+        base_clean + '/sitemaps.xml'
+    ]
+    
+    for sm_url in sitemap_candidates:
         try:
-            resp = requests.get(sm_url, timeout=5, headers=headers)
+            resp = requests.get(sm_url, timeout=6, headers=headers)
             if resp.status_code == 200:
                 root = ET.fromstring(resp.content)
                 for elem in root.iter():
@@ -103,57 +112,112 @@ def get_and_audit_country_pages(base_url, max_pages=20):
         except Exception:
             pass
 
-    # 2. Kurumsal Dizinler (WAF Korumasını Aşmak ve Zengin İçerik Sunmak İçin)
-    domain = urlparse(base_url).netloc
-    base_clean = base_url.rstrip('/')
-    corporate_paths = [
+    # 2. Homepage Link Harvesting for Extended Discovery
+    try:
+        home_resp = requests.get(base_url, timeout=5, headers=headers)
+        if home_resp.status_code == 200:
+            soup_home = BeautifulSoup(home_resp.text, 'html.parser')
+            for a in soup_home.find_all('a', href=True):
+                full = urljoin(base_url, a['href'])
+                parsed = urlparse(full)
+                if parsed.netloc == domain:
+                    clean = parsed._replace(fragment="").geturl()
+                    discovered_urls.add(clean)
+    except:
+        pass
+
+    # Ensure robust deep coverage with extensive enterprise paths
+    url_list = list(discovered_urls)
+    extra_paths = [
         "/", "/crop-protection", "/seed-varieties", "/vegetables", 
         "/syngenta-biologicals", "/cropwise-digital-solutions", "/spray-assist", 
-        "/events", "/news", "/fungicide/miravis-plus", "/fungicide/orondis-vip", 
-        "/hybrid-barley/hyvido", "/contact", "/sustainability", "/good-growth-plan", 
-        "/innovation", "/about-us", "/seed/vibrance-duo", "/fungicide/elatus-era"
+        "/events", "/partnership-plan", "/news", "/fungicide/miravis-plus", 
+        "/fungicide/orondis-vip", "/hybrid-barley/hyvido", "/contact", 
+        "/sustainability", "/good-growth-plan", "/innovation", "/about-us",
+        "/seed/rancona-i-mix", "/seed/vibrance-duo", "/fungicide/elatus-era",
+        "/herbicide/callisto", "/plant-health/matrix", "/news/simons-seasonal-insights",
+        "/crop-protection/fungicides", "/crop-protection/herbicides", "/crop-protection/seed-care",
+        "/seed/hybrid-wheat", "/crop-protection/insecticides", "/seed-guide",
+        "/growers", "/digital-farming", "/investors", "/media", "/products",
+        "/solutions", "/research", "/careers", "/press-releases", "/distributors"
     ]
-    for path in corporate_paths:
-        discovered_urls.add(base_clean + path)
+    for p in extra_paths:
+        url_list.append(base_clean + p)
 
-    url_list = list(discovered_urls)[:max_pages]
-    
-    # 3. Her Sayfa İçin Canlı AIO Analizi Yapalım
+    url_list = list(dict.fromkeys(url_list))[:max_pages]
+
+    # 3. Perform Page-Level AIO Audit & Generate Specific Optimization Recommendations
     audited_results = []
     for url in url_list:
-        score = 60 # Varsayılan baz skor
-        status = "Optimizasyon Gerekli"
-        word_count = 350
-        h1_status = "Var"
-        
+        score = 50
+        word_count = 0
+        h1_status = "Missing"
+        meta_desc = False
+        schema_present = False
+        recommendations = []
+
         try:
             page_resp = requests.get(url, timeout=3, headers=headers)
             if page_resp.status_code == 200:
                 soup = BeautifulSoup(page_resp.text, 'html.parser')
                 text = soup.get_text()
-                word_count = len(text.split())
+                words = [w for w in text.split() if w.isalnum()]
+                word_count = len(words)
+                
                 h1_tags = soup.find_all('h1')
-                h1_status = f"{len(h1_tags)} adet" if h1_tags else "Bulunamadı"
-                
-                # AIO Skor Algoritması (Yapay zeka motorlarının okuyabilirliği için metin yoğunluğu ve H1 kontrolü)
-                score = 50
-                if len(h1_tags) == 1: score += 20
-                if word_count > 250: score += 20
-                if soup.find('meta', attrs={'name': 'description'}): score += 10
-                
-                status = "Mükemmel (AI-Ready)" if score >= 80 else ("Orta Düzey" if score >= 60 else "Geliştirilmeli")
+                if len(h1_tags) == 1:
+                    h1_status = "Optimal (1 H1)"
+                    score += 25
+                elif len(h1_tags) > 1:
+                    h1_status = f"Multiple ({len(h1_tags)})"
+                    score += 10
+                    recommendations.append("Consolidate H1 tags to a single primary header for AI clarity.")
+                else:
+                    h1_status = "Missing"
+                    recommendations.append("Add a clear H1 tag containing primary keyword.")
+
+                meta = soup.find('meta', attrs={'name': 'description'})
+                if meta and meta.get('content'):
+                    meta_desc = True
+                    score += 20
+                else:
+                    recommendations.append("Add a meta description tag optimized for LLM search snippets.")
+
+                if soup.find('script', type='application/ld+json'):
+                    schema_present = True
+                    score += 15
+                else:
+                    recommendations.append("Implement Schema.org structured data (Product/Organization) for machine readability.")
+
+                if word_count > 300:
+                    score += 20
+                else:
+                    recommendations.append(f"Low content volume ({word_count} words). Expand with FAQs or technical data for AI indexing.")
+
+                if not recommendations:
+                    recommendations.append("Page is fully optimized for AI search engines (ChatGPT, Gemini, Perplexity).")
+
+                status = "AI-Ready" if score >= 85 else ("Needs Optimization" if score >= 60 else "Critical Review")
+            else:
+                status = "Blocked / 403"
+                recommendations.append("Bypass WAF or check server accessibility.")
+                score = 30
         except:
-            status = "Erişilemedi (WAF Koruması)"
-            score = 40
+            status = "Unreachable"
+            recommendations.append("Connection timeout or firewall restriction.")
+            score = 25
 
         audited_results.append({
             "url": url,
             "score": score,
             "status": status,
             "words": word_count,
-            "h1": h1_status
+            "h1": h1_status,
+            "meta": "Present" if meta_desc else "Missing",
+            "schema": "Present" if schema_present else "Missing",
+            "recommendations": recommendations
         })
-        
+
     return audited_results
 
 # --- HEADER ---
@@ -163,7 +227,7 @@ st.markdown(f"""
             Syngenta Global AIO Intelligence Hub
         </h1>
         <p style="font-size: 16px; color: #475569; font-weight: 600; margin: 0;">
-            Ülke Bazlı Otomatik Web Sitesi Tarama ve Sayfa Bazlı AIO Analiz Paneli
+            Deep Enterprise Crawler & Page-Level AI Search Optimization Audit
         </p>
     </div>
 """, unsafe_allow_html=True)
@@ -180,8 +244,10 @@ country_data = {
 # 🏠 HOME DASHBOARD
 # ==========================================
 if st.session_state.selected_country == "Home":
-    st.header("🌍 Global Ülke Çalışma Alanları")
-    st.write("İncelemek istediğiniz ülke paneline tıklayarak alt sayfaların AIO denetimlerini görüntüleyin.")
+    st.header("🌍 Global Country Workspaces")
+    st.write("Select a country workspace below to run a deep crawl and comprehensive AIO audit across up to 100 pages.")
+
+    max_limit = st.slider("Select Maximum Page Crawl Limit per Country:", 20, 100, 60)
 
     c1, c2, c3 = st.columns(3)
     
@@ -193,8 +259,9 @@ if st.session_state.selected_country == "Home":
                 <div style="color: #475569; font-size: 14px; margin-top: 10px;">{country_data['Poland']['url']}</div>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Poland Paneline Git", key="bp"):
+        if st.button("Open Poland Workspace", key="bp"):
             st.session_state.selected_country = "Poland"
+            st.session_state.max_limit = max_limit
             st.rerun()
 
     with c2:
@@ -205,8 +272,9 @@ if st.session_state.selected_country == "Home":
                 <div style="color: #475569; font-size: 14px; margin-top: 10px;">{country_data['Germany']['url']}</div>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Germany Paneline Git", key="bd"):
+        if st.button("Open Germany Workspace", key="bd"):
             st.session_state.selected_country = "Germany"
+            st.session_state.max_limit = max_limit
             st.rerun()
 
     with c3:
@@ -217,50 +285,43 @@ if st.session_state.selected_country == "Home":
                 <div style="color: #475569; font-size: 14px; margin-top: 10px;">{country_data['UK']['url']}</div>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("UK Paneline Git", key="bu"):
+        if st.button("Open UK Workspace", key="bu"):
             st.session_state.selected_country = "UK"
+            st.session_state.max_limit = max_limit
             st.rerun()
 
 # ==========================================
-# 🌐 SPECIFIC COUNTRY DASHBOARD (UK, POLAND, GERMANY)
+# 🌐 SPECIFIC COUNTRY DASHBOARD
 # ==========================================
 else:
     curr_key = st.session_state.selected_country
     curr = country_data[curr_key]
+    limit = st.session_state.get('max_limit', 60)
 
-    if st.button("⬅ Global Ana Ekrana Dön"):
+    if st.button("⬅ Back to Global Hub"):
         st.session_state.selected_country = "Home"
         st.rerun()
 
-    st.title(f"{curr['flag']} Syngenta {curr['name']} ({curr['url']}) - AIO Audit Hub")
-    st.write(f"Bu ülke paneline özel olarak **{curr['url']}** adresindeki sayfalar taranmış ve yapay zeka arama motoru (ChatGPT, Gemini, Perplexity) uyumlulukları analiz edilmiştir:")
+    st.title(f"{curr['flag']} Syngenta {curr['name']} ({curr['url']}) - Deep AIO Audit")
+    st.write(f"Deep crawling up to **{limit} pages** and running AI Search Optimization audits across the portfolio:")
 
-    with st.spinner(f"{curr['name']} sayfaları taranıyor ve AIO analizi koşturuluyor..."):
-        audit_results = get_and_audit_country_pages(curr['url'], max_pages=20)
+    with st.spinner(f"Crawling {curr['name']} sitemaps and executing page-level audits..."):
+        audit_results = deep_crawl_and_audit(curr['url'], max_pages=limit)
 
-    st.success(f"Başarıyla **{len(audit_results)}** sayfa tarandı ve her biri için AIO skoru çıkarıldı!")
+    st.success(f"Successfully scanned and audited **{len(audit_results)} pages** with custom recommendations!")
 
-    # Tablo veya Şık Kartlar Halinde Gösterim
-    for item in audit_results:
-        # Renklendirme mantığı
-        badge_color = "#166534" if item['score'] >= 80 else ("#B45309" if item['score'] >= 60 else "#991B1B")
-        bg_color = "#F0FDF4" if item['score'] >= 80 else ("#FEF3C7" if item['score'] >= 60 else "#FEF2F2")
-
-        st.markdown(f"""
-            <div style="padding: 14px; background: {bg_color}; border: 1px solid #E2E8F0; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                <div style="max-width: 75%;">
-                    <a href="{item['url']}" target="_blank" style="font-size: 14px; font-weight: 700; color: #001489; text-decoration: none;">{item['url']}</a>
-                    <div style="font-size: 12px; color: #475569; margin-top: 4px;">
-                        Kelime: <b>{item['words']}</b> | H1 Etiketi: <b>{item['h1']}</b> | Durum: <b>{item['status']}</b>
-                    </div>
-                </div>
-                <div style="text-align: right;">
-                    <span style="background: {badge_color}; color: #FFFFFF; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 14px;">
-                        AIO: {item['score']}
-                    </span>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+    for idx, item in enumerate(audit_results, 1):
+        with st.expander(f"#{idx} | {item['url']} (AIO Score: {item['score']}) - Status: {item['status']}"):
+            col_a, col_b = st.columns([2, 3])
+            with col_a:
+                st.markdown(f"**Word Count:** {item['words']}")
+                st.markdown(f"**H1 Tag:** {item['h1']}")
+                st.markdown(f"**Meta Description:** {item['meta']}")
+                st.markdown(f"**Schema.org:** {item['schema']}")
+            with col_b:
+                st.markdown("**AI Search Optimization Recommendations:**")
+                for rec in item['recommendations']:
+                    st.markdown(f"- {rec}")
 
 st.markdown("---")
-st.caption("Syngenta Global Hybrid Scraper & AIO Intelligence Hub | Page-Level Audit Edition")
+st.caption("Syngenta Global AIO Intelligence Hub | Deep Crawler & Actionable Optimization Edition")
