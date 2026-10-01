@@ -89,22 +89,50 @@ st.markdown("""
 if 'selected_country' not in st.session_state:
     st.session_state.selected_country = "Home"
 
-# --- LIVE CRAWLER FUNCTION ---
-def live_scrape_website(base_url, max_pages=10):
-    discovered_urls = []
-    sitemap_url = base_url.rstrip('/') + '/sitemap.xml'
-    try:
-        response = requests.get(sitemap_url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'})
-        if response.status_code == 200:
-            root = ET.fromstring(response.content)
-            for elem in root.iter():
-                if elem.tag.endswith('loc') and elem.text:
-                    discovered_urls.append(elem.text.strip())
-            if discovered_urls:
-                return discovered_urls[:max_pages]
-    except Exception:
-         pass
+# --- ADVANCED LIVE CRAWLER FUNCTION (Sitemap Index & Deep Parsing) ---
+def live_scrape_website(base_url, max_pages=50):
+    discovered_urls = set()
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+    
+    # 1. Sitemap & Sitemap Index Taraması
+    sitemap_candidates = [
+        base_url.rstrip('/') + '/sitemap.xml',
+        base_url.rstrip('/') + '/sitemap_index.xml',
+        base_url.rstrip('/') + '/sitemaps.xml'
+    ]
+    
+    for sm_url in sitemap_candidates:
+        try:
+            resp = requests.get(sm_url, timeout=8, headers=headers)
+            if resp.status_code == 200:
+                root = ET.fromstring(resp.content)
+                # Tüm <loc> etiketlerini topluyoruz
+                for elem in root.iter():
+                    if elem.tag.endswith('loc') and elem.text:
+                        loc_text = elem.text.strip()
+                        # Eğer alt sitemap dosyası ise (.xml ile bitiyorsa) içeriğine girip sayfaları çekelim
+                        if 'sitemap' in loc_text and loc_text.endswith('.xml') and loc_text != sm_url:
+                            try:
+                                sub_resp = requests.get(loc_text, timeout=5, headers=headers)
+                                if sub_resp.status_code == 200:
+                                    sub_root = ET.fromstring(sub_resp.content)
+                                    for sub_elem in sub_root.iter():
+                                        if sub_elem.tag.endswith('loc') and sub_elem.text:
+                                            discovered_urls.add(sub_elem.text.strip())
+                            except:
+                                pass
+                        else:
+                            discovered_urls.add(loc_text)
+        except Exception:
+            pass
+        if len(discovered_urls) > 10:
+            break
 
+    # Eğer sitemap üzerinden yeterli sayfa bulunduysa döndür
+    if len(discovered_urls) > 1:
+        return list(discovered_urls)[:max_pages]
+
+    # 2. Fallback: Derinlemesine Bağlantı Taraması (Recursive Crawl)
     visited = set()
     to_visit = [base_url]
     domain = urlparse(base_url).netloc
@@ -116,16 +144,19 @@ def live_scrape_website(base_url, max_pages=10):
         visited.add(current_url)
         
         try:
-            res = requests.get(current_url, timeout=3, headers={'User-Agent': 'Mozilla/5.0'})
+            res = requests.get(current_url, timeout=4, headers=headers)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, 'html.parser')
                 for link in soup.find_all('a', href=True):
                     full_url = urljoin(current_url, link['href'])
                     parsed = urlparse(full_url)
-                    if parsed.netloc == domain and full_url not in visited:
-                        to_visit.append(full_url)
+                    clean_url = parsed._replace(fragment="").geturl()
+                    # Sadece aynı domain içerisindeki sayfaları al
+                    if parsed.netloc == domain and clean_url not in visited and clean_url not in to_visit:
+                        to_visit.append(clean_url)
         except Exception:
             continue
+            
     return list(visited)
 
 # --- HEADER ---
@@ -143,11 +174,11 @@ st.markdown(f"""
 st.markdown("---")
 
 # ==========================================
-# 🏠 HOME DASHBOARD
+# 🏠 HOME DASHBOARD & LIVE CRAWLER
 # ==========================================
 if st.session_state.selected_country == "Home":
-    st.header("🌍 Global Country Workspaces & Live Scraper")
-    st.write("Select a market below or execute a live Screaming Frog-style audit on any web address.")
+    st.header("🌍 Global Country Workspaces & Advanced Live Scraper")
+    st.write("Screaming Frog benzeri gelişmiş site taraması ile hedef web sitesindeki tüm aktif sayfaları keşfedin.")
 
     c1, c2, c3 = st.columns(3)
     
@@ -188,18 +219,25 @@ if st.session_state.selected_country == "Home":
             st.rerun()
 
     st.markdown("---")
-    st.subheader("🔍 Live URL Crawler (Screaming Frog Style)")
-    target_url = st.text_input("Taranacak Web Sitesini Girin:", "https://www.syngenta.co.uk")
+    st.subheader("🔍 Screaming Frog Style Bulk URL Crawler")
     
-    if st.button("Canlı Taramayı Başlat"):
-        with st.spinner("Site haritası okunuyor ve aktif sayfalar taranıyor..."):
-            scraped_results = live_scrape_website(target_url, max_pages=10)
-        st.success(f"Toplam {len(scraped_results)} aktif sayfa başarıyla tarandı!")
+    col_input1, col_input2 = st.columns([3, 1])
+    with col_input1:
+        target_url = st.text_input("Taranacak Web Sitesi URL'si:", "https://www.syngenta.co.uk")
+    with col_input2:
+        max_limit = st.slider("Maksimum Sayfa Limiti:", 10, 100, 50)
+    
+    if st.button("Tüm Alt Sayfaları Taramayı Başlat"):
+        with st.spinner(f"Site haritaları ve alt dizinler taranıyor (Hedef: max {max_limit} sayfa)..."):
+            scraped_results = live_scrape_website(target_url, max_pages=max_limit)
+        
+        st.success(f"Başarıyla toplam **{len(scraped_results)}** aktif sayfa keşfedildi ve tarandı!")
+        
         for idx, p_url in enumerate(scraped_results, 1):
             st.markdown(f"""
-                <div style="padding: 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; margin-bottom: 8px;">
-                    <b>#{idx}</b> &nbsp;|&nbsp; <a href="{p_url}" target="_blank">{p_url}</a>
-                    <span style="float: right; color: #166534; font-weight: bold; font-size: 12px;">✅ AIO Ready</span>
+                <div style="padding: 10px 14px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; color: #0F172A;">#{idx} &nbsp;|&nbsp; <a href="{p_url}" target="_blank" style="color: #001489; text-decoration: none;">{p_url}</a></span>
+                    <span style="background: #DCFCE7; color: #166534; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ AIO Ready</span>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -212,11 +250,7 @@ elif st.session_state.selected_country == "UK":
         st.rerun()
 
     st.title("🇬🇧 Syngenta United Kingdom (syngenta.co.uk) - AIO Audit")
-    st.write("Active product URLs parsed successfully.")
-    if st.button("UK Canlı Sayfaları Yeniden Tara", key="live_uk"):
-        with st.spinner("Canlı tarama yapılıyor..."):
-            res = live_scrape_website("https://www.syngenta.co.uk", max_pages=5)
-        st.success(f"{len(res)} sayfa tarandı ve doğrulandı!")
+    st.write("UK portföyü alt sayfaları.")
 
 # ==========================================
 # 🇵🇱 POLAND DASHBOARD
@@ -227,7 +261,7 @@ elif st.session_state.selected_country == "Poland":
         st.rerun()
 
     st.title("🇵🇱 Syngenta Poland (syngenta.pl) - AIO Audit")
-    st.write("Polish portfolio pages crawled.")
+    st.write("Poland portföyü alt sayfaları.")
 
 # ==========================================
 # 🇩🇪 GERMANY DASHBOARD
@@ -238,7 +272,7 @@ elif st.session_state.selected_country == "Germany":
         st.rerun()
 
     st.title("🇩🇪 Syngenta Germany (syngenta.de) - AIO Audit")
-    st.write("German Pflanzenschutz portfolio pages crawled.")
+    st.write("Germany portföyü alt sayfaları.")
 
 st.markdown("---")
-st.caption("Syngenta Global Hybrid Scraper & AIO Intelligence Hub | Live Crawler Edition")
+st.caption("Syngenta Global Hybrid Scraper & AIO Intelligence Hub | Advanced Crawler Edition")
